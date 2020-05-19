@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -84,17 +82,7 @@ func fetchLatest(w http.ResponseWriter, r *http.Request, owner, repo, query stri
 func proxy(w http.ResponseWriter, r *http.Request, rel *release, query string) {
 	for _, asset := range rel.Assets {
 		if strings.Contains(asset.GetName(), query) {
-			url, err := url.Parse(asset.GetBrowserDownloadURL())
-			if err != nil {
-				fail(w, http.StatusInternalServerError)
-			}
-
-			proxy := &httputil.ReverseProxy{
-				Director: func(r *http.Request) {
-					r.URL = url
-				},
-			}
-			proxy.ServeHTTP(w, r)
+			http.Redirect(w, r, asset.GetBrowserDownloadURL(), http.StatusFound)
 			return
 		}
 	}
