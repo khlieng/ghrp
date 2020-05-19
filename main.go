@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v31/github"
@@ -15,13 +16,34 @@ import (
 const cacheTTL = 5 * time.Minute
 
 var (
-	client       *github.Client
-	releaseCache = map[string]*release{}
+	client *github.Client
+	cache  = &releaseCache{
+		m: map[string]*release{},
+	}
+	mu sync.RWMutex
 )
 
 type release struct {
 	*github.RepositoryRelease
 	fetchedAt time.Time
+}
+
+type releaseCache struct {
+	m  map[string]*release
+	mu sync.RWMutex
+}
+
+func (c *releaseCache) get(owner, repo string) (*release, bool) {
+	c.mu.RLock()
+	rel, ok := c.m[owner+"/"+repo]
+	c.mu.RUnlock()
+	return rel, ok
+}
+
+func (c *releaseCache) set(owner, repo string, rel *release) {
+	c.mu.Lock()
+	c.m[owner+"/"+repo] = rel
+	c.mu.Unlock()
 }
 
 func main() {
@@ -53,8 +75,7 @@ func serve(w http.ResponseWriter, r *http.Request) {
 		repo := params[1]
 		query := params[2]
 
-		if rel, ok := releaseCache[owner+"/"+repo]; ok &&
-			time.Since(rel.fetchedAt) < cacheTTL {
+		if rel, ok := cache.get(owner, repo); ok && time.Since(rel.fetchedAt) < cacheTTL {
 			proxy(w, r, rel, query)
 		} else {
 			fetchLatest(w, r, owner, repo, query)
@@ -73,7 +94,7 @@ func fetchLatest(w http.ResponseWriter, r *http.Request, owner, repo, query stri
 			RepositoryRelease: ghRel,
 			fetchedAt:         time.Now(),
 		}
-		releaseCache[owner+"/"+repo] = rel
+		cache.set(owner, repo, rel)
 
 		proxy(w, r, rel, query)
 	}
