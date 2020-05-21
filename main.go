@@ -20,7 +20,6 @@ var (
 	cache  = &releaseCache{
 		m: map[string]*release{},
 	}
-	mu sync.RWMutex
 )
 
 type release struct {
